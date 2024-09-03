@@ -25,14 +25,17 @@ interface PRDetails {
 }
 
 async function getPRDetails(): Promise<PRDetails> {
+  console.log("getPRDetails");
   const { repository, number } = JSON.parse(
     readFileSync(process.env.GITHUB_EVENT_PATH || "", "utf8")
   );
+  console.log("repository", repository, "number", number);
   const prResponse = await octokit.pulls.get({
     owner: repository.owner.login,
     repo: repository.name,
     pull_number: number,
   });
+  console.log("prResponse", prResponse);
   return {
     owner: repository.owner.login,
     repo: repository.name,
@@ -185,17 +188,22 @@ async function createReviewComment(
 async function main() {
   const prDetails = await getPRDetails();
   let diff: string | null;
+  console.log("parsing event data");
   const eventData = JSON.parse(
     readFileSync(process.env.GITHUB_EVENT_PATH ?? "", "utf8")
   );
+  console.log("parsed", eventData);
 
   if (eventData.action === "opened") {
+    console.log("PR opened");
     diff = await getDiff(
       prDetails.owner,
       prDetails.repo,
       prDetails.pull_number
     );
+    console.log("diff", diff);
   } else if (eventData.action === "synchronize") {
+    console.log("PR synchronized");
     const newBaseSha = eventData.before;
     const newHeadSha = eventData.after;
 
@@ -210,6 +218,8 @@ async function main() {
     });
 
     diff = String(response.data);
+
+    console.log("commits compared", diff);
   } else {
     console.log("Unsupported event:", process.env.GITHUB_EVENT_NAME);
     return;
@@ -221,20 +231,30 @@ async function main() {
   }
 
   const parsedDiff = parseDiff(diff);
+  console.log("parsedDiff", parsedDiff);
 
   const excludePatterns = core
     .getInput("exclude")
     .split(",")
     .map((s) => s.trim());
+  console.log("excludePatterns", excludePatterns);
 
   const filteredDiff = parsedDiff.filter((file) => {
     return !excludePatterns.some((pattern) =>
       minimatch(file.to ?? "", pattern)
     );
   });
+  console.log("filteredDiff", filteredDiff);
 
   const comments = await analyzeCode(filteredDiff, prDetails);
+  console.log("comments", comments);
   if (comments.length > 0) {
+    console.log("creating review comment", {
+      owner: prDetails.owner,
+      repo: prDetails.repo,
+      pull_number: prDetails.pull_number,
+      comments,
+    });
     await createReviewComment(
       prDetails.owner,
       prDetails.repo,
